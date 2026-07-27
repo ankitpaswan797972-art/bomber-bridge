@@ -6,21 +6,22 @@ import threading
 from flask import Flask, request, jsonify
 from telethon import TelegramClient
 
+# Render se Environment Variables lena
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 BRIDGE_SECRET = os.getenv("BRIDGE_SECRET", "mysecret123")
-BOT_USERNAME = "bombbot_bot"
+BOT_USERNAME = "THAKUR_BOMBER_BOT"
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 🟢 Ek hi loop, app start hote hi banega aur background mein chalega
+# 🟢 Ek hi background loop banega jab app start hoga
 _bg_loop = asyncio.new_event_loop()
 _bg_thread = threading.Thread(target=_bg_loop.run_forever, daemon=True)
 _bg_thread.start()
 
-# 🟢 Client ek hi baar banao, aur usse bg_loop pe lock karo
+# 🟢 Client isi loop pe lock hoga
 _client = TelegramClient("session_bomber", API_ID, API_HASH, loop=_bg_loop)
 
 def run_async(coro):
@@ -80,7 +81,7 @@ def handle():
     try:
         ok = run_async(do_login())
         if not ok:
-            return jsonify({"status": "failed", "error": "Session expired."}), 401
+            return jsonify({"status": "failed", "error": "Session expired. Re-login via Console."}), 401
         result = run_async(start_attack(data["number"]))
         return jsonify(result)
     except Exception as e:
@@ -92,4 +93,5 @@ def home():
     return jsonify({"service": "Bomber Bridge", "status": "running"})
 
 if __name__ == "__main__":
+    # Local testing ke liye
     app.run(host="0.0.0.0", port=8080, threaded=False)
