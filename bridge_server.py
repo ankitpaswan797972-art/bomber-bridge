@@ -4,10 +4,12 @@ import logging
 import os
 import threading
 from flask import Flask, request, jsonify
-from telethon import TelegramClient
+from telethon import TelegramClient, StringSession
 
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
+# Environment variable se String Session lenge
+SESSION_STRING = os.getenv("SESSION_STRING", "")
 BRIDGE_SECRET = os.getenv("BRIDGE_SECRET", "mysecret123")
 BOT_USERNAME = "bombbot_bot"
 
@@ -34,8 +36,11 @@ def run_async(coro):
 async def get_client():
     global _client
     if _client is None:
-        # Loop explicitly pass kar rahe hain taaki koi confusion na ho
-        _client = TelegramClient("session_bomber", API_ID, API_HASH, loop=_bg_loop)
+        # Agar String Session hai, toh wo use karo, warna file use karo
+        if SESSION_STRING:
+            _client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH, loop=_bg_loop)
+        else:
+            _client = TelegramClient("session_bomber", API_ID, API_HASH, loop=_bg_loop)
     
     if not _client.is_connected():
         await _client.connect()
@@ -94,7 +99,7 @@ def handle():
     try:
         ok = run_async(do_login())
         if not ok:
-            return jsonify({"status": "failed", "error": "Session expired. Re-login via Console."}), 401
+            return jsonify({"status": "failed", "error": "Session expired. Generate a new String Session."}), 401
         result = run_async(start_attack(data["number"]))
         return jsonify(result)
     except Exception as e:
