@@ -12,26 +12,28 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global event loop — ek hi loop pure app mein chalega
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+# ❌ Module level pe kuch mat banao — Gunicorn fork pe loop toot jaata hai
+_client = None
+_loop = None
 
-client = TelegramClient("session_bomber", API_ID, API_HASH)
+def get_client():
+    """Lazy init — first request pe banta hai, fir reuse hota hai"""
+    global _client, _loop
+    if _client is None:
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+        _client = TelegramClient("session_bomber", API_ID, API_HASH)
+    return _client, _loop
 
-async def do_login():
-    """Login without interactive input — session file should already exist."""
+async def do_login(client):
     await client.connect()
     if await client.is_user_authorized():
-        logger.info("Session already valid")
+        logger.info("✅ Session valid")
         return True
-    logger.error("Session invalid or expired")
+    logger.error("❌ Session invalid/expired")
     return False
 
-async def start_attack(number):
-    logged_in = await do_login()
-    if not logged_in:
-        return {"status": "failed", "error": "Session expired. Re-login manually via Railway Console."}
-
+async def start_attack(client, number):
     num = re.sub(r'[\s\-\+\(\)]', '', number)
     if len(num) == 10:
         num = f"+91{num}"
@@ -71,8 +73,11 @@ def handle():
     if data.get("action") != "bomb" or not data.get("number"):
         return jsonify({"error": "Sahi number daal bhai"}), 400
     try:
-        # ✅ Use the SAME event loop — NOT asyncio.run()
-        result = loop.run_until_complete(start_attack(data["number"]))
+        client, loop = get_client()
+        ok = loop.run_until_complete(do_login(client))
+        if not ok:
+            return jsonify({"status": "failed", "error": "Session expired. Re-login via Console."}), 401
+        result = loop.run_until_complete(start_attack(client, data["number"]))
         return jsonify(result)
     except Exception as e:
         logger.exception("Attack failed")
@@ -81,11 +86,6 @@ def handle():
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"service": "Bomber Bridge", "status": "running"})
-
-# ✅ Startup: connect on the same loop
-ok = loop.run_until_complete(do_login())
-if not ok:
-    logger.warning("Session not ready. Run manual login in Railway Console.")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
