@@ -2,7 +2,6 @@ import asyncio
 import re
 import logging
 import os
-import threading
 from flask import Flask, request, jsonify
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -17,30 +16,28 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Background loop for async
-_bg_loop = asyncio.new_event_loop()
-def _start_bg_loop(loop):
-    asyncio.set_event_loop(loop)
-    loop.run_forever()
-_bg_thread = threading.Thread(target=_start_bg_loop, args=(_bg_loop,), daemon=True)
-_bg_thread.start()
-
 _client = None
 
-def run_async(coro):
-    future = asyncio.run_coroutine_threadsafe(coro, _bg_loop)
-    return future.result(timeout=120)
-
-async def get_client():
+def get_client():
     global _client
     if _client is None:
-        _client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH, loop=_bg_loop)
-    if not _client.is_connected():
-        await _client.connect()
+        _client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     return _client
 
+def run_async(coro):
+    # Naya event loop create karke run karenge, taaki Flask thread se na tule
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
 async def do_attack(number):
-    client = await get_client()
+    client = get_client()
+    if not client.is_connected():
+        await client.connect()
+        
     if not await client.is_user_authorized():
         return {"status": "failed", "error": "Session expired"}
 
@@ -52,7 +49,7 @@ async def do_attack(number):
 
     bot = await client.get_entity(BOT_USERNAME)
     await client.send_message(bot, "/menu")
-    await asyncio.sleep(1.5) # Sleep reduced for faster response
+    await asyncio.sleep(1.5)
 
     async for msg in client.iter_messages(bot, limit=10):
         if msg.buttons:
@@ -95,4 +92,4 @@ def home():
     return jsonify({"service": "Bomber Bridge", "status": "running"})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, threaded=True)
+    app.run(host="0.0.0.0", port=8080)
