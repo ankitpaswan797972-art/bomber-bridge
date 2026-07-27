@@ -12,6 +12,10 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Global event loop — ek hi loop pure app mein chalega
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 client = TelegramClient("session_bomber", API_ID, API_HASH)
 
 async def do_login():
@@ -67,7 +71,9 @@ def handle():
     if data.get("action") != "bomb" or not data.get("number"):
         return jsonify({"error": "Sahi number daal bhai"}), 400
     try:
-        return jsonify(asyncio.run(start_attack(data["number"])))
+        # ✅ Use the SAME event loop — NOT asyncio.run()
+        result = loop.run_until_complete(start_attack(data["number"]))
+        return jsonify(result)
     except Exception as e:
         logger.exception("Attack failed")
         return jsonify({"status": "failed", "error": str(e)}), 500
@@ -76,10 +82,10 @@ def handle():
 def home():
     return jsonify({"service": "Bomber Bridge", "status": "running"})
 
+# ✅ Startup: connect on the same loop
+ok = loop.run_until_complete(do_login())
+if not ok:
+    logger.warning("Session not ready. Run manual login in Railway Console.")
+
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    ok = loop.run_until_complete(do_login())
-    if not ok:
-        logger.warning("Session not ready. Run manual login in Railway Console.")
     app.run(host="0.0.0.0", port=8080)
