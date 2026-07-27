@@ -23,21 +23,28 @@ logger = logging.getLogger(__name__)
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
 # ─── Login Function ─────────────────────────────────────────────────────
-async def login():
-    """Pehli baar OTP mangega, baad mein session save rahega."""
+async def do_login():
+    """Telegram mein login karo. Pehli baar OTP mangega."""
     await client.connect()
     if not await client.is_user_authorized():
-        print("\n📱 Telegram login required!")
-        print(f"📱 OTP bheja ja raha hai {PHONE_NUMBER} pe...")
+        print("\n" + "="*50)
+        print("  📱 TELEGRAM LOGIN REQUIRED!")
+        print("="*50)
+        print(f"  📱 OTP bheja ja raha hai {PHONE_NUMBER} pe...")
+        print("  👇 Neeche 'Input' button se OTP daalo")
+        print("="*50 + "\n")
         await client.send_code_request(PHONE_NUMBER)
-        code = input("🔑 Telegram ka OTP daalo: ").strip()
+        code = input().strip()  # Railway ke Input button se aayega
         try:
             await client.sign_in(PHONE_NUMBER, code)
             print("✅ Login successful!")
         except errors.SessionPasswordNeededError:
-            pwd = input("🔒 2FA password daalo: ").strip()
+            print("🔒 2FA password daalo (neeche Input mein):")
+            pwd = input().strip()
             await client.sign_in(password=pwd)
             print("✅ Login with 2FA successful!")
+    else:
+        print("✅ Already logged in!")
 
 # ─── Button Click Function ─────────────────────────────────────────────
 async def click_button(bot, button_text):
@@ -64,7 +71,8 @@ async def get_bot_response(bot):
 # ─── Attack Function ───────────────────────────────────────────────────
 async def start_attack(number):
     """Poore attack ka flow yahan hai."""
-    await login()
+    # Pehle login check
+    await do_login()
     
     # Number clean karo
     num = re.sub(r'[\s\-\+\(\)]', '', number)
@@ -81,7 +89,7 @@ async def start_attack(number):
     # Step 1: /menu bhejo
     logger.info("📤 Sending /menu")
     await client.send_message(bot, "/menu")
-    await asyncio.sleep(2)  # 2 sec wait - bot process kare
+    await asyncio.sleep(2)
     
     # Step 2: "START BOMB" button click karo
     logger.info("🖱️ Looking for START BOMB button")
@@ -114,7 +122,6 @@ def handle_request():
     if not data:
         return jsonify({"error": "JSON nahi mila"}), 400
     
-    # Secret check - unauthorized access rokega
     if data.get("secret") != BRIDGE_SECRET:
         return jsonify({"error": "Secret galat hai"}), 403
     
@@ -138,17 +145,14 @@ def handle_request():
 def home():
     return jsonify({"service": "Bomber Bridge", "status": "running"})
 
-# ─── Start Server ──────────────────────────────────────────────────────
-if __name__ == "__main__":
-    print("=" * 50)
-    print("  🔥 BRIDGE SERVER STARTING...")
-    print("=" * 50)
-    
-    # Pehle login
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(login())
-    
-    # Phir server
-    print("🚀 Server starting on port 8080...")
-    app.run(host="0.0.0.0", port=8080, debug=False)
+# ─── Yeh ab MODULE LEVEL pe chalega (gunicorn ke saath kaam karega) ────
+print("="*50)
+print("  🔥 BRIDGE SERVER STARTING...")
+print("="*50)
+
+# Login ab yahan hota hai - module load hote hi
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+loop.run_until_complete(do_login())
+
+print("🚀 Server ready on port 8080!")
