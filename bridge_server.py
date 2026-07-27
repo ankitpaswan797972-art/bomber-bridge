@@ -6,50 +6,62 @@ import threading
 from flask import Flask, request, jsonify
 from telethon import TelegramClient
 
-# Render se Environment Variables lena
+# Render se Environment Variables
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 BRIDGE_SECRET = os.getenv("BRIDGE_SECRET", "mysecret123")
-BOT_USERNAME = "THAKUR_BOMBER_BOT"
+BOT_USERNAME = "bombbot_bot"
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 🟢 Ek hi background loop banega jab app start hoga
+# 🟢 Background loop setup
 _bg_loop = asyncio.new_event_loop()
 _bg_thread = threading.Thread(target=_bg_loop.run_forever, daemon=True)
 _bg_thread.start()
 
-# 🟢 Client isi loop pe lock hoga
-_client = TelegramClient("session_bomber", API_ID, API_HASH, loop=_bg_loop)
+# 🟢 Client ko ab globally nhi banayenge, function ke andar banayenge
+_client = None
 
 def run_async(coro):
     """Flask (sync) se Telethon (async) ko safely call karne ka rasta"""
     future = asyncio.run_coroutine_threadsafe(coro, _bg_loop)
     return future.result(timeout=120)
 
-async def do_login():
+async def get_client():
+    """Client ko background loop ke andar lazily banayein"""
+    global _client
+    if _client is None:
+        # Ye background loop ke andar chalega, isliye loop mismatch nahi hoga
+        _client = TelegramClient("session_bomber", API_ID, API_HASH)
+    
     if not _client.is_connected():
         await _client.connect()
-    if await _client.is_user_authorized():
+    return _client
+
+async def do_login():
+    client = await get_client()
+    if await client.is_user_authorized():
         logger.info("✅ Session valid")
         return True
     logger.error("❌ Session invalid/expired")
     return False
 
 async def start_attack(number):
+    client = await get_client()
+    
     num = re.sub(r'[\s\-\+\(\)]', '', number)
     if len(num) == 10:
         num = f"+91{num}"
     elif len(num) == 12 and num.startswith("91"):
         num = f"+{num}"
 
-    bot = await _client.get_entity(BOT_USERNAME)
-    await _client.send_message(bot, "/menu")
+    bot = await client.get_entity(BOT_USERNAME)
+    await client.send_message(bot, "/menu")
     await asyncio.sleep(2)
 
-    async for msg in _client.iter_messages(bot, limit=10):
+    async for msg in client.iter_messages(bot, limit=10):
         if msg.buttons:
             for row in msg.buttons:
                 for btn in row:
@@ -63,10 +75,10 @@ async def start_attack(number):
         break
 
     await asyncio.sleep(2)
-    await _client.send_message(bot, num)
+    await client.send_message(bot, num)
     await asyncio.sleep(2)
 
-    async for msg in _client.iter_messages(bot, limit=2):
+    async for msg in client.iter_messages(bot, limit=2):
         if not msg.outgoing and msg.text:
             return {"status": "success", "target": num, "bot_response": msg.text}
     return {"status": "success", "target": num, "bot_response": "Sent"}
@@ -93,5 +105,4 @@ def home():
     return jsonify({"service": "Bomber Bridge", "status": "running"})
 
 if __name__ == "__main__":
-    # Local testing ke liye
     app.run(host="0.0.0.0", port=8080, threaded=False)
