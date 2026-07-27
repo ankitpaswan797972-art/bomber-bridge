@@ -6,7 +6,7 @@ API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
 BRIDGE_SECRET = os.getenv("BRIDGE_SECRET", "mysecret123")
-BOT_USERNAME = "THAKUR_BOMBER_BOT"
+BOT_USERNAME = "@bombbot_bot"
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
