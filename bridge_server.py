@@ -1,93 +1,32 @@
-import asyncio
 import re
 import logging
 import os
-import threading
+import time
 from flask import Flask, request, jsonify
-from telethon import TelegramClient, StringSession
+from telethon.sync import TelegramClient
+from telethon.sessions import StringSession
 
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
-# Environment variable se String Session lenge
 SESSION_STRING = os.getenv("SESSION_STRING", "")
 BRIDGE_SECRET = os.getenv("BRIDGE_SECRET", "mysecret123")
-BOT_USERNAME = "bombbot_bot"
+BOT_USERNAME = "THAKUR_BOMBER_BOT"
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 🟢 Background Loop Setup
-_bg_loop = asyncio.new_event_loop()
-
-def _start_bg_loop(loop):
-    asyncio.set_event_loop(loop)
-    loop.run_forever()
-
-_bg_thread = threading.Thread(target=_start_bg_loop, args=(_bg_loop,), daemon=True)
-_bg_thread.start()
-
 _client = None
 
-def run_async(coro):
-    future = asyncio.run_coroutine_threadsafe(coro, _bg_loop)
-    return future.result(timeout=120)
-
-async def get_client():
+def get_client():
     global _client
     if _client is None:
-        # Agar String Session hai, toh wo use karo, warna file use karo
         if SESSION_STRING:
-            _client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH, loop=_bg_loop)
+            # String Session use karenge
+            _client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
         else:
-            _client = TelegramClient("session_bomber", API_ID, API_HASH, loop=_bg_loop)
-    
-    if not _client.is_connected():
-        await _client.connect()
+            _client = TelegramClient("session_bomber", API_ID, API_HASH)
     return _client
-
-async def do_login():
-    client = await get_client()
-    if await client.is_user_authorized():
-        logger.info("✅ Session valid")
-        return True
-    logger.error("❌ Session invalid/expired")
-    return False
-
-async def start_attack(number):
-    client = await get_client()
-    
-    num = re.sub(r'[\s\-\+\(\)]', '', number)
-    if len(num) == 10:
-        num = f"+91{num}"
-    elif len(num) == 12 and num.startswith("91"):
-        num = f"+{num}"
-
-    bot = await client.get_entity(BOT_USERNAME)
-    await client.send_message(bot, "/menu")
-    await asyncio.sleep(2)
-
-    async for msg in client.iter_messages(bot, limit=10):
-        if msg.buttons:
-            for row in msg.buttons:
-                for btn in row:
-                    if "START" in btn.text.upper():
-                        await btn.click()
-                        break
-                else:
-                    continue
-                break
-            break
-        break
-
-    await asyncio.sleep(2)
-    await client.send_message(bot, num)
-    await asyncio.sleep(2)
-
-    async for msg in client.iter_messages(bot, limit=2):
-        if not msg.outgoing and msg.text:
-            return {"status": "success", "target": num, "bot_response": msg.text}
-    return {"status": "success", "target": num, "bot_response": "Sent"}
 
 @app.route("/", methods=["POST"])
 def handle():
@@ -97,11 +36,47 @@ def handle():
     if data.get("action") != "bomb" or not data.get("number"):
         return jsonify({"error": "Sahi number daal bhai"}), 400
     try:
-        ok = run_async(do_login())
-        if not ok:
-            return jsonify({"status": "failed", "error": "Session expired. Generate a new String Session."}), 401
-        result = run_async(start_attack(data["number"]))
-        return jsonify(result)
+        client = get_client()
+        client.connect()
+        if not client.is_user_authorized():
+            return jsonify({"status": "failed", "error": "Session expired."}), 401
+
+        number = data["number"]
+        num = re.sub(r'[\s\-\+\(\)]', '', number)
+        if len(num) == 10:
+            num = f"+91{num}"
+        elif len(num) == 12 and num.startswith("91"):
+            num = f"+{num}"
+
+        bot = client.get_entity(BOT_USERNAME)
+        client.send_message(bot, "/menu")
+        time.sleep(2)
+
+        # Sync mode me iter_messages ki jagah get_messages use hota hai
+        msgs = client.get_messages(bot, limit=10)
+        for msg in msgs:
+            if msg.buttons:
+                for row in msg.buttons:
+                    for btn in row:
+                        if "START" in btn.text.upper():
+                            btn.click()
+                            break
+                    else:
+                        continue
+                    break
+                break
+            break
+
+        time.sleep(2)
+        client.send_message(bot, num)
+        time.sleep(2)
+
+        msgs = client.get_messages(bot, limit=2)
+        for msg in msgs:
+            if not msg.outgoing and msg.text:
+                return jsonify({"status": "success", "target": num, "bot_response": msg.text})
+        
+        return jsonify({"status": "success", "target": num, "bot_response": "Sent"})
     except Exception as e:
         logger.exception("Attack failed")
         return jsonify({"status": "failed", "error": str(e)}), 500
