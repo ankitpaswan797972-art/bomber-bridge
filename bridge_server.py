@@ -6,7 +6,6 @@ import threading
 from flask import Flask, request, jsonify
 from telethon import TelegramClient
 
-# Render se Environment Variables
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 BRIDGE_SECRET = os.getenv("BRIDGE_SECRET", "mysecret123")
@@ -16,25 +15,27 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 🟢 Background loop setup
+# 🟢 Background Loop Setup
 _bg_loop = asyncio.new_event_loop()
-_bg_thread = threading.Thread(target=_bg_loop.run_forever, daemon=True)
+
+def _start_bg_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+_bg_thread = threading.Thread(target=_start_bg_loop, args=(_bg_loop,), daemon=True)
 _bg_thread.start()
 
-# 🟢 Client ko ab globally nhi banayenge, function ke andar banayenge
 _client = None
 
 def run_async(coro):
-    """Flask (sync) se Telethon (async) ko safely call karne ka rasta"""
     future = asyncio.run_coroutine_threadsafe(coro, _bg_loop)
     return future.result(timeout=120)
 
 async def get_client():
-    """Client ko background loop ke andar lazily banayein"""
     global _client
     if _client is None:
-        # Ye background loop ke andar chalega, isliye loop mismatch nahi hoga
-        _client = TelegramClient("session_bomber", API_ID, API_HASH)
+        # Loop explicitly pass kar rahe hain taaki koi confusion na ho
+        _client = TelegramClient("session_bomber", API_ID, API_HASH, loop=_bg_loop)
     
     if not _client.is_connected():
         await _client.connect()
